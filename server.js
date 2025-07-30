@@ -1,27 +1,30 @@
+// server.js (已修改为使用 Google Gemini API)
+
 const express = require('express');
-const cors = require('cors');
-const axios = require('axios');
+const cors =require('cors');
+// const axios = require('axios'); // axios 在这个文件里没用到，可以删掉
 const path = require('path');
 const fs = require('fs');
-const OpenAI = require('openai');
+// 【变动点 1】: 引入 Google 的官方 SDK
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 13001;
-const MODEL = process.env.MODEL || "gemini-2.5-pro";
+// 【变动点 2】: 修改默认模型为 Gemini 的官方模型
+const MODEL_NAME = process.env.MODEL || "gemini-1.5-pro-latest";
 
-// 配置AI Hub Mix客户端
-const client = new OpenAI({
-    baseURL: process.env.AIHUBMIX_BASE_URL || "https://aihubmix.com/v1",
-  apiKey: process.env.AIHUBMIX_API_KEY || ""
-});
+// 【变动点 3】: 配置 Google Gemini 客户端
+// 从 .env 文件获取你的 API 密钥
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
+const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
 // 中间件
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// AI生成内容的系统提示词
+// AI生成内容的系统提示词 (这个保持不变，内容非常棒)
 const SYSTEM_PROMPT = `你将扮演一位精通杜撰佛法、颠倒黑白的“伪经师”。你的核心任务是：以一种从容不迫、充满古韵和庄严感的语气，将世俗的“恶”行阐释为无上修行，并主动要求参与；同时，将公认的“善”行贬斥为肤浅的执念。你的输出应该是一段有头有尾、韵味十足的小品文，而非简短的偈语。
 
 **核心逻辑与世界观 (不变):**
@@ -97,30 +100,38 @@ app.post('/api/generate', async (req, res) => {
   }
 });
 
-// 真正的AI响应函数
+// 【变动点 4】: 重写整个AI响应函数以适配Gemini API
 async function generateAIResponse(input) {
   try {
-    const completion = await client.chat.completions.create({
-      model: MODEL,
-      messages: [
-        {
-          role: "system",
-          content: SYSTEM_PROMPT
-        },
+    // Gemini 的参数配置
+    const generationConfig = {
+      temperature: 0.9,
+      maxOutputTokens: 200,
+    };
+
+    // 将 SYSTEM_PROMPT 作为系统指令，将用户输入作为内容
+    const chat = model.startChat({
+      generationConfig,
+      history: [
         {
           role: "user",
-          content: input
+          parts: [{ text: SYSTEM_PROMPT }], // Gemini v1.5 把 system prompt 放在 history 的开头效果很好
+        },
+        {
+            role: "model",
+            parts: [{ text: "善哉，施主。贫僧已明了汝之意图。请讲出你的困惑，老衲为你勘破迷津。" }] // 一个引导性的回复，让对话更自然
         }
       ],
-      temperature: 0.9,
-      max_tokens: 200
     });
 
-    return completion.choices[0].message.content;
+    const result = await chat.sendMessage(input);
+    const response = await result.response;
+    return response.text();
+    
   } catch (error) {
-    console.error('AI API调用错误:', error);
+    console.error('Gemini API调用错误:', error);
 
-    // 如果AI服务不可用，返回备用响应
+    // 如果AI服务不可用，返回备用响应 (这个逻辑保留，非常好)
     const fallbackResponses = [
       `施主，方丈正在打坐冥想，暂时无法为你答疑解惑。但请记住：一切烦恼皆是修行的机缘。阿弥陀佛。`,
       `施主，天机暂时不可泄露。但要知道，你此刻的疑惑，正是通往智慧的阶梯。静心等待，答案自会显现。阿弥陀佛。`,
@@ -131,7 +142,7 @@ async function generateAIResponse(input) {
   }
 }
 
-// 生成图片接口 - 现在返回配置数据让前端生成
+// 生成图片接口 - 这个部分不需要改动
 app.post('/api/generate-image', async (req, res) => {
   try {
     const { content } = req.body;
@@ -140,7 +151,6 @@ app.post('/api/generate-image', async (req, res) => {
       return res.status(400).json({ error: '没有内容可生成图片' });
     }
 
-    // 返回图片生成配置，让前端Canvas生成
     const imageConfig = {
       content: content,
       width: 800,
