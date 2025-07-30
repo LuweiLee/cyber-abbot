@@ -12,7 +12,7 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 13001;
 // 【变动点 2】: 修改默认模型为 Gemini 的官方模型
-const MODEL_NAME = process.env.MODEL || "gemini-1.5-pro-latest";
+const MODEL_NAME = process.env.MODEL || "gemini-2.0-flash-lite";
 
 // 【变动点 3】: 配置 Google Gemini 客户端
 // 从 .env 文件获取你的 API 密钥
