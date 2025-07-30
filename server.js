@@ -8,7 +8,7 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 13001;
-const MODEL_NAME = process.env.MODEL || "gemini-1.5-pro-latest"; // 使用更新的模型
+const MODEL_NAME = process.env.MODEL || "gemini-2.0-flash-lite"; // 使用更新的模型
 
 // 配置 Google Gemini 客户端
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
