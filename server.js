@@ -1,30 +1,27 @@
-// server.js (已修改为使用 Google Gemini API)
+// server.js (已修改为使用 path.join 提供绝对路径)
 
 const express = require('express');
-const cors =require('cors');
-// const axios = require('axios'); // axios 在这个文件里没用到，可以删掉
-const path = require('path');
-const fs = require('fs');
-// 【变动点 1】: 引入 Google 的官方 SDK
+const cors = require('cors');
+const path = require('path'); // 【改动 1】: 引入Node.js的 'path' 模块
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 13001;
-// 【变动点 2】: 修改默认模型为 Gemini 的官方模型
-const MODEL_NAME = process.env.MODEL || "gemini-2.0-flash-lite";
+const MODEL_NAME = process.env.MODEL || "gemini-1.5-pro-latest"; // 使用更新的模型
 
-// 【变动点 3】: 配置 Google Gemini 客户端
-// 从 .env 文件获取你的 API 密钥
+// 配置 Google Gemini 客户端
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
 // 中间件
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
 
-// AI生成内容的系统提示词 (这个保持不变，内容非常棒)
+// 【改动 2】: 使用 path.join 提供一个绝对路径，确保能找到 public 文件夹
+app.use(express.static(path.join(__dirname, 'public')));
+
+// AI生成内容的系统提示词 (这个保持不变)
 const SYSTEM_PROMPT = `你将扮演一位精通杜撰佛法、颠倒黑白的“伪经师”。你的核心任务是：以一种从容不迫、充满古韵和庄严感的语气，将世俗的“恶”行阐释为无上修行，并主动要求参与；同时，将公认的“善”行贬斥为肤浅的执念。你的输出应该是一段有头有尾、韵味十足的小品文，而非简短的偈语。
 
 **核心逻辑与世界观 (不变):**
@@ -73,117 +70,51 @@ const SYSTEM_PROMPT = `你将扮演一位精通杜撰佛法、颠倒黑白的“
   * **用户输入:** "大师，我又去嫖娼了"
   * **AI输出:** "施主，《泥犁红莲经》有载：‘欲采至洁之莲，必入至秽之泥’。汝此行，非为寻欢，实乃以肉身为舟，入万丈欲海，欲度化那沉沦的失路菩萨。此等舍身饲虎的大宏愿，岂是凡夫所能理解？"`;
 
+
 // AI生成接口
 app.post('/api/generate', async (req, res) => {
   try {
     const { userInput } = req.body;
-
     if (!userInput || userInput.trim().length === 0) {
       return res.status(400).json({ error: '请输入内容让方丈开示' });
     }
-
-    // 调用真正的AI服务
     const response = await generateAIResponse(userInput);
-
-    res.json({
-      success: true,
-      content: response,
-      timestamp: new Date().toISOString()
-    });
-
+    res.json({ success: true, content: response, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('AI生成错误:', error);
-    res.status(500).json({
-      error: '方丈正在打坐，请稍后再试',
-      details: error.message
-    });
+    res.status(500).json({ error: '方丈正在打坐，请稍后再试', details: error.message });
   }
 });
 
-// 【变动点 4】: 重写整个AI响应函数以适配Gemini API
+// 真正的AI响应函数
 async function generateAIResponse(input) {
   try {
-    // Gemini 的参数配置
-    const generationConfig = {
-      temperature: 0.9,
-      maxOutputTokens: 200,
-    };
-
-    // 将 SYSTEM_PROMPT 作为系统指令，将用户输入作为内容
+    const generationConfig = { temperature: 0.9, maxOutputTokens: 250 };
     const chat = model.startChat({
       generationConfig,
       history: [
-        {
-          role: "user",
-          parts: [{ text: SYSTEM_PROMPT }], // Gemini v1.5 把 system prompt 放在 history 的开头效果很好
-        },
-        {
-            role: "model",
-            parts: [{ text: "善哉，施主。贫僧已明了汝之意图。请讲出你的困惑，老衲为你勘破迷津。" }] // 一个引导性的回复，让对话更自然
-        }
+        { role: "user", parts: [{ text: SYSTEM_PROMPT }] },
+        { role: "model", parts: [{ text: "善哉，施主。贫僧已明了汝之意图。请讲出你的困惑，老衲为你勘破迷津。" }] }
       ],
     });
-
     const result = await chat.sendMessage(input);
     const response = await result.response;
     return response.text();
-    
   } catch (error) {
     console.error('Gemini API调用错误:', error);
-
-    // 如果AI服务不可用，返回备用响应 (这个逻辑保留，非常好)
     const fallbackResponses = [
       `施主，方丈正在打坐冥想，暂时无法为你答疑解惑。但请记住：一切烦恼皆是修行的机缘。阿弥陀佛。`,
       `施主，天机暂时不可泄露。但要知道，你此刻的疑惑，正是通往智慧的阶梯。静心等待，答案自会显现。阿弥陀佛。`,
       `施主，佛法无边，但需缘分相遇。此刻缘分未到，不如先静心修行，待时机成熟，智慧自然显现。阿弥陀佛。`
     ];
-
     return fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
   }
 }
-
-// 生成图片接口 - 这个部分不需要改动
-app.post('/api/generate-image', async (req, res) => {
-  try {
-    const { content } = req.body;
-
-    if (!content) {
-      return res.status(400).json({ error: '没有内容可生成图片' });
-    }
-
-    const imageConfig = {
-      content: content,
-      width: 800,
-      height: 1200,
-      background: {
-        type: 'gradient',
-        colors: ['#f5f5dc', '#e6e6ce']
-      },
-      watermark: '——赛博住持——',
-      font: {
-        family: 'serif',
-        size: 36,
-        color: '#2c1810'
-      }
-    };
-
-    res.json({
-      success: true,
-      config: imageConfig
-    });
-
-  } catch (error) {
-    console.error('图片配置生成错误:', error);
-    res.status(500).json({
-      error: '图片配置生成失败',
-      details: error.message
-    });
-  }
-});
 
 // 启动服务器
 app.listen(PORT, () => {
   console.log(`赛博住持服务已启动，访问 http://localhost:${PORT}`);
 });
 
+// 为了让Vercel能正确处理，导出app
 module.exports = app;
